@@ -4,6 +4,12 @@ CS292C Homework 2 — Problem 4: DFA Monitors + Bounded Trace Verification (20 p
 Part (a): Implement three stateful runtime monitors as DFAs.
 Part (b): Verify the same properties using Z3 bounded model checking.
 Part (c): Find a trace that passes all monitors but is still dangerous.
+
+AI Attribution: Used Claude Code to implement the monitor classes and the bounded
+Z3 encoding. The DFA monitors were pretty straightforward from lecture notes.
+The bounded verification negation functions took some back and forth to get the
+quantifier structure right (exists j such that forall i<j...). Came up with the
+part (c) completeness gap trace myself by thinking about what the monitors dont check.
 """
 
 from z3 import *

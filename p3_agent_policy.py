@@ -3,6 +3,12 @@ CS292C Homework 2 — Problem 3: Agent Permission Policy Verification (25 points
 =================================================================================
 Encode a realistic agent permission policy as SMT formulas and use Z3 to
 analyze it for safety properties and privilege escalation vulnerabilities.
+
+AI Attribution: Used Claude Code for the Z3 encoding of the policy rules (ForAll +
+biconditional approach). I figured out the default-deny structure and which rules
+override which from the problem description, Claude helped get the Z3 syntax right.
+The escalation model was tricky — I sketched the 2-step attack on paper and Claude
+helped encode the before/after sensitivity functions.
 """
 
 from z3 import *

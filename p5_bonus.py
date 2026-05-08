@@ -3,6 +3,11 @@ CS292C Homework 2 — Problem 5 (Bonus): Verified Skill Composition (10 points)
 ===============================================================================
 Verify that two sequentially composed agent skills maintain a filesystem
 invariant, then show how a composition bug breaks the invariant.
+
+AI Attribution: Used Claude Code to set up the Z3 array encoding for the filesystem
+model and the ForAll quantifiers for the frame conditions. The skeleton already had
+most of the structure, I just needed to uncomment and wire up the solver checks.
+The [EXPLAIN] for part (c) is from my own experience using Claude Code.
 """
 
 from z3 import *

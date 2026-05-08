@@ -9,6 +9,11 @@ Part (a): Compute wp using your VCG and analyze preconditions with Z3.
 Part (b): Implement wp() and verify() below.
 Part (c): Discover loop invariants for three programs.
 Part (d): Find and fix a bug in a provided invariant.
+
+AI Attribution: Used Claude Code to implement wp() and verify(). I worked out the
+wp rules from lecture notes first, then had Claude help with the Z3 substitute() calls
+and getting the side VC generation right for while loops. Found the loop invariants
+by tracing on paper (noted in [EXPLAIN] comments), then Claude helped encode them as ASTs.
 """
 
 from z3 import *

@@ -2,6 +2,11 @@
 CS292C Homework 2 — Problem 1: Z3 Warm-Up + EUF Puzzle (15 points)
 ===================================================================
 Complete each function below. Run this file to check your answers.
+
+AI Attribution: I used Claude Code to help implement and debug the Z3 encodings.
+I wrote the initial approach on paper first, then used Claude to translate it into
+working Z3 python code and fix issues with the API. All [EXPLAIN] comments are
+my own understanding written after getting the code working and verifying the results.
 """
 
 from z3 import *
