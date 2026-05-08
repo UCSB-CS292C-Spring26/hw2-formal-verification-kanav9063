@@ -47,11 +47,8 @@ allowed = Function('allowed', User, IntSort(), Resource, BoolSort())
 
 def make_policy():
     """
-    Return a list of Z3 constraints encoding rules R1–R5.
-
-    Strategy: use a default-deny biconditional. allowed(u, t, r) is True iff
-    one of the explicit permit conditions holds AND no deny condition applies.
-    This ensures anything not explicitly allowed is denied (closed-world).
+    Return a list of Z3 constraints encoding rules R1-R5.
+    Using default-deny: allowed = (some permit rule matches) AND (no deny rule fires).
     """
     u = Const('u', User)
     r = Const('r', Resource)
@@ -132,8 +129,8 @@ def part_b():
     r = Const('r', Resource)
 
     # Q1: Can a developer write to a sensitive file they don't own, in the sandbox?
-    # [EXPLAIN] SAT — R2 allows developers to file_write sandbox resources regardless of
-    # ownership or sensitivity. R4 only blocks shell_exec, not file_write.
+    # [EXPLAIN] SAT — R2 says devs can write if they own it OR its in sandbox.
+    # since its in the sandbox, ownership doesnt matter. R4 only blocks shell_exec not writes.
     query("Q1: Developer writes sensitive, non-owned, sandbox file?",
           policy,
           [role(u) == DEVELOPER,
@@ -143,8 +140,8 @@ def part_b():
            allowed(u, FILE_WRITE, r) == True])
 
     # Q2: Can an admin network_fetch outside the sandbox?
-    # [EXPLAIN] UNSAT — R5 restricts network_fetch to sandbox resources for everyone,
-    # including admins. The deny rule overrides R3.
+    # [EXPLAIN] UNSAT — R5 says net_fetch only works in sandbox, period. even admins
+    # can't do it because the deny rule overrides R3.
     query("Q2: Admin network_fetch outside sandbox?",
           policy,
           [role(u) == ADMIN,
@@ -152,8 +149,7 @@ def part_b():
            allowed(u, NETWORK_FETCH, r) == True])
 
     # Q3: Any role that can shell_exec on a sensitive resource?
-    # [EXPLAIN] UNSAT — R4 explicitly blocks all users from shell_exec on sensitive
-    # resources. This deny rule overrides even R3 (admin permissions).
+    # [EXPLAIN] UNSAT — R4 says nobody can shell_exec on sensitive stuff, no exceptions.
     query("Q3: Any role shell_exec on sensitive resource?",
           policy,
           [is_sensitive(r) == True,
@@ -183,9 +179,8 @@ def part_b():
         ForAll([u2], Or(role(u2) == ADMIN, role(u2) == DEVELOPER, role(u2) == VIEWER))
     ]
 
-    # [EXPLAIN] Without R4, admins can shell_exec on sensitive resources.
-    # This is dangerous because shell_exec can run arbitrary code on
-    # sensitive data (e.g., dumping a database, exfiltrating credentials).
+    # [EXPLAIN] without R4 theres nothing stopping admins from running shell_exec on
+    # sensitive resources — R3 just lets them do everything.
     query("Q4: Without R4, admin shell_exec on sensitive resource?",
           policy_no_r4,
           [role(u2) == ADMIN,
@@ -199,13 +194,8 @@ def part_b():
 
 def part_c():
     """
-    Model a 2-step privilege escalation attack.
-
-    New rule R6: Developers may shell_exec on non-sensitive sandbox resources.
-
-    Attack: Step 1 — developer shell_exec on r1 (non-sensitive, sandbox) which
-    modifies a config that controls r2's sensitivity. Step 2 — r2 is now
-    non-sensitive, so developer shell_exec on r2 bypasses R4.
+    Model a 2-step escalation. R6: devs can shell_exec non-sensitive sandbox resources.
+    Attack: step 1 shell_exec changes r2's sensitivity flag, step 2 shell_exec on r2.
     """
     print("=== Part (c): Privilege Escalation ===\n")
 

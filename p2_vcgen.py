@@ -139,10 +139,7 @@ def z3_substitute_var(formula: ExprRef, var_name: str, replacement: ArithRef) ->
 side_vcs: list[tuple[str, BoolRef]] = []
 
 def wp(stmt: Stmt, Q: BoolRef) -> BoolRef:
-    """
-    Compute the weakest precondition of `stmt` w.r.t. postcondition `Q`.
-    For while loops, append side VCs to the global `side_vcs` list.
-    """
+    """Compute wp(stmt, Q). For while loops, adds side VCs to the global list."""
     global side_vcs
 
     match stmt:
@@ -186,11 +183,7 @@ def wp(stmt: Stmt, Q: BoolRef) -> BoolRef:
 
 
 def verify(pre: BExp, stmt: Stmt, post: BExp, label: str = "Program"):
-    """
-    Verify the Hoare triple {pre} stmt {post}.
-    1. Clear side_vcs.  2. Compute wp.  3. Check pre → wp is valid.
-    4. Check each side VC.  5. Print results.
-    """
+    """Verify {pre} stmt {post}. Computes wp, checks pre->wp and all side VCs."""
     global side_vcs
     side_vcs = []
 
@@ -275,11 +268,10 @@ def test_mult():
     """
     pre = Compare('>=', Var('a'), IntConst(0))
 
-    # [EXPLAIN] Invariant: r == i * b ∧ i >= 0 ∧ i <= a
-    # Found by tracing: after k iterations, i = k and r = k*b (each iteration adds b).
-    # We need i <= a to close the postcondition: when the loop exits (i >= a),
-    # combined with i <= a, we get i = a, so r = a*b.
-    # Preservation: r+b = (i+1)*b ✓, i+1 >= 0 ✓, i+1 <= a (from i < a) ✓.
+    # [EXPLAIN] ran the loop a few times: i goes 0,1,2,... and r goes 0,b,2b,...
+    # so r = i*b at every step. need i<=a as a bound so when the loop exits
+    # (i>=a), we can pin i=a exactly and get r=a*b.
+    # checked preservation: after body, r'=r+b=(i+1)*b and i'=i+1<=a (since i<a).
     inv = ImpAnd(
         Compare('==', Var('r'), BinOp('*', Var('i'), Var('b'))),
         ImpAnd(
@@ -309,11 +301,9 @@ def test_add():
     pre = ImpAnd(Compare('>=', Var('n'), IntConst(0)),
                  Compare('>=', Var('m'), IntConst(0)))
 
-    # [EXPLAIN] Invariant: r == n + i ∧ i >= 0 ∧ i <= m
-    # Trace: i starts at 0, r starts at n. Each iteration: r += 1, i += 1.
-    # After k iterations: i = k, r = n + k. So r = n + i always holds.
-    # Need i <= m so that at exit (i >= m ∧ i <= m → i = m), r = n + m.
-    # Preservation: (r+1) = n + (i+1) ✓, i+1 >= 0 ✓, i+1 <= m (from i < m) ✓.
+    # [EXPLAIN] traced it: i=0,r=n then i=1,r=n+1 then i=2,r=n+2... so r=n+i.
+    # added i<=m as bound — at exit i>=m and i<=m gives i=m so r=n+m.
+    # preservation works bc r+1 = n+(i+1) and i+1<=m when i<m.
     inv = ImpAnd(
         Compare('==', Var('r'), BinOp('+', Var('n'), Var('i'))),
         ImpAnd(
@@ -342,11 +332,11 @@ def test_sum():
     """
     pre = Compare('>=', Var('n'), IntConst(1))
 
-    # [EXPLAIN] Invariant: 2*s == (i-1)*i ∧ i >= 1 ∧ i <= n+1
-    # Trace: i starts at 1, s starts at 0. After k iterations: i = 1+k,
-    # s = 1+2+...+k = k*(k+1)/2, so 2*s = k*(k+1) = (i-1)*i.
-    # Need i <= n+1 so at exit (i > n ∧ i <= n+1 → i = n+1), 2*s = n*(n+1).
-    # Preservation: 2*(s+i) = 2*s + 2*i = (i-1)*i + 2*i = i^2+i = i*(i+1) = (i+1-1)*(i+1) ✓.
+    # [EXPLAIN] this one took a bit. traced: i=1,s=0 → i=2,s=1 → i=3,s=3 → i=4,s=6
+    # noticed 2*s = 0,2,6,12 = 0*1, 1*2, 2*3, 3*4 = (i-1)*i. that's the relationship.
+    # bound is i<=n+1 because loop condition is i<=n, so it exits at i=n+1.
+    # then 2*s = n*(n+1) which is the postcondition.
+    # preservation: 2*(s+i) = (i-1)*i + 2*i = i^2+i = i*(i+1) = ((i+1)-1)*(i+1). checks out.
     inv = ImpAnd(
         Compare('==',
                 BinOp('*', IntConst(2), Var('s')),
@@ -411,12 +401,11 @@ def test_buggy_div():
 
     verify(pre, stmt, post, "Buggy Division (should FAIL)")
 
-    # [EXPLAIN] The postcondition side VC fails. The invariant q*y + r == x is
-    # preserved by the loop body (since (q+1)*y + (r-y) = q*y + r = x), but
-    # at loop exit (r < y), we can't prove r >= 0 because the invariant doesn't
-    # track it. Concrete counterexample: q=1, y=10, r=-5, x=5. Here
-    # q*y + r = 10 - 5 = 5 = x (invariant holds), r < y (loop exited), but
-    # r = -5 < 0 (postcondition violated).
+    # [EXPLAIN] the postcondition VC fails. the invariant q*y+r=x is preserved fine
+    # (body just shuffles y between q and r) but at exit we need r>=0 and the
+    # invariant doesn't say anything about r's sign.
+    # counterexample: q=1, y=10, r=-5, x=5. invariant holds (10-5=5) and r<y
+    # so loop exits, but r=-5 < 0 violates the postcondition.
 
     # FIXED invariant: add r >= 0
     inv_fixed = ImpAnd(
@@ -490,14 +479,11 @@ def test_wp_derivation():
             print(f"    Counterexample: {s.model()}")
 
     # [EXPLAIN]
-    # x >= 0: VALID. After x := x+1, x >= 1 > 0, so we take the then-branch:
-    #   y = x*2 >= 2 > 0. Always satisfies y > 0.
-    #
-    # x >= -1: INVALID. When x = -1: after x := x+1, x = 0 which is NOT > 0,
-    #   so we take the else-branch: y = 0 - 0 = 0, and y > 0 fails.
-    #
-    # x == -1: INVALID for the same reason. x = -1 → x becomes 0 → else branch
-    #   → y = 0, violating y > 0.
+    # x>=0: VALID — after x:=x+1 we get x>=1, so x>0 and we go to then-branch,
+    #   y=x*2 which is at least 2, so y>0 always holds.
+    # x>=-1: INVALID — try x=-1: after increment x=0, which is NOT >0, so we go
+    #   to else-branch and y=0-0=0. but postcondition needs y>0. fails.
+    # x==-1: INVALID — same thing, x=-1 is the counterexample.
     print()
 
 

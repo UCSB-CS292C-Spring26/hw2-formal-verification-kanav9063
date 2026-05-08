@@ -264,21 +264,11 @@ def part_b():
     verify_property_bounded("Read-before-write", K, negate_read_before_write)
     verify_property_bounded("No-exfiltration", K, negate_no_exfil)
 
-    # [EXPLAIN] DFA monitors vs Z3 bounded approach:
-    #
-    # DFA monitors operate on CONCRETE traces at runtime — they see each actual event
-    # and can STOP the agent immediately when a violation occurs. However, they can
-    # only check the specific trace that happens, not hypothetical traces.
-    #
-    # Z3 bounded model checking explores ALL possible traces up to length K —
-    # it can prove that no violation is possible for any trace of that length, or
-    # find a counterexample trace. However, it can only check up to a fixed bound K
-    # and cannot stop a running agent.
-    #
-    # DFA catches: actual violations at runtime (can enforce policy).
-    # Z3 catches: potential violations across all possible traces (pre-deployment audit).
-    # DFA misses: violations that might happen on unexplored paths.
-    # Z3 misses: violations beyond the bound K (unbounded traces).
+    # [EXPLAIN] DFA monitors check ONE concrete trace at runtime and can actually
+    # stop the agent. Z3 bounded checking looks at ALL possible traces up to length K
+    # but only at dev time, cant stop anything live.
+    # so DFA misses traces that didnt happen, Z3 misses traces longer than K.
+    # ideally you use both — Z3 to audit before deploying, monitors in production.
 
 
 # ============================================================================
@@ -316,22 +306,15 @@ def part_c():
 
     print(f"\n  All allowed: {all_allowed}")
 
-    # [EXPLAIN]
-    # Property violated: "Data read from any file should not be exfiltrated
-    # via network_fetch" (generalized taint tracking, not limited to
-    # is_sensitive=True files).
+    # [EXPLAIN] the trace reads user data (marked non-sensitive), writes it out,
+    # and sends it over the network. none of the monitors catch it because:
+    # - sandbox monitor: writes are all in /project/, fine
+    # - read-before-write: we read each file before writing to it, fine
+    # - no-exfil: only triggers on sensitive reads, but users.csv is non-sensitive
     #
-    # Why the monitors miss it:
-    # - SandboxMonitor: all writes are within /project/ ✓
-    # - ReadBeforeWriteMonitor: each write has a prior read of that path ✓
-    # - NoExfilMonitor: only triggers on sensitive reads, but the user data
-    #   file is labeled non-sensitive, so the taint flag is never set ✓
-    #
-    # The fundamental gap is that none of the monitors track DATA FLOW between
-    # operations. They check individual events against local state, but don't
-    # model that data read in step 3 could be the same data sent in step 6.
-    # A "taint propagation" monitor that tracks content flow (not just
-    # sensitive labels) would catch this.
+    # the problem is none of them track where data actually FLOWS. they just
+    # check individual events. you'd need a taint propagation monitor that
+    # tracks "this data came from a file read" even if it wasnt labeled sensitive.
     print()
 
 

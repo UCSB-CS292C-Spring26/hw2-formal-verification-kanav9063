@@ -82,24 +82,22 @@ def part_c():
     else:
         print("UNSAT")
 
-    # STEP 2: Derive WHY this is UNSAT through a chain of validity checks.
-    #
-    # Key insight: from f(f(x)) = x, applying f to both sides gives f(f(f(x))) = f(x).
-    # But f(f(f(x))) = x (given), so f(x) = x. This contradicts f(x) ≠ x.
+    # STEP 2: figure out WHY it's UNSAT by breaking the reasoning into steps
+    # idea: if f(f(x)) = x, then applying f to both sides gives f(f(f(x))) = f(x)
+    # but we also know f(f(f(x))) = x, so that means f(x) = x... which contradicts f(x) != x
     print()
     print("  Derivation:")
 
-    # Step 1: From f(f(x)) = x, prove f(f(f(x))) = f(x)
-    # This follows by congruence: if a = b then f(a) = f(b).
-    # Here a = f(f(x)), b = x, so f(f(f(x))) = f(x).
+    # step 1: from f(f(x)) = x, we can get f(f(f(x))) = f(x)
+    # just applying f to both sides (congruence axiom from EUF)
     s1 = Solver()
     s1.add(f(f(x)) == x)
     s1.add(Not(f(f(f(x))) == f(x)))  # negate to check validity
     r1 = s1.check()
     print(f"  Step 1: f(f(x))=x  →  f(f(f(x)))=f(x)   {'Valid' if r1 == unsat else 'INVALID'}")
 
-    # Step 2: Combined with f(f(f(x))) = x, derive f(x) = x
-    # From step 1: f(f(f(x))) = f(x). Given: f(f(f(x))) = x. By transitivity: f(x) = x.
+    # step 2: now f(f(f(x))) = f(x) from above, and f(f(f(x))) = x from the problem
+    # so f(x) = x (transitivity — both equal f(f(f(x))))
     s2 = Solver()
     s2.add(f(f(f(x))) == f(x))  # from step 1
     s2.add(f(f(f(x))) == x)     # given
@@ -107,18 +105,15 @@ def part_c():
     r2 = s2.check()
     print(f"  Step 2: f(f(f(x)))=f(x) ∧ f(f(f(x)))=x  →  f(x)=x   {'Valid' if r2 == unsat else 'INVALID'}")
 
-    # Step 3: f(x) = x contradicts f(x) ≠ x
+    # step 3: but f(x) = x and f(x) != x can't both be true
     s3 = Solver()
     s3.add(f(x) == x)   # from step 2
     s3.add(f(x) != x)   # given
     r3 = s3.check()
     print(f"  Step 3: f(x)=x ∧ f(x)≠x  →  contradiction   {'Confirmed (UNSAT)' if r3 == unsat else 'NOT contradictory'}")
 
-    # [EXPLAIN] The formula is UNSAT because:
-    # 1. f(f(x)) = x means f is an involution (applying it twice returns to x).
-    # 2. Applying f to both sides: f(f(f(x))) = f(x) (by congruence/function application).
-    # 3. But f(f(f(x))) = x (given), so by transitivity f(x) = x.
-    # 4. This contradicts f(x) ≠ x. Therefore the conjunction is unsatisfiable.
+    # [EXPLAIN] UNSAT because f(f(x))=x lets us derive f(f(f(x)))=f(x) (apply f to both sides).
+    # Combined with f(f(f(x)))=x we get f(x)=x, which directly contradicts f(x)!=x.
     print()
 
 
@@ -154,13 +149,11 @@ def part_d():
     r2 = s2.check()
     print(f"Axiom 2 (miss): {'Valid' if r2 == unsat else 'INVALID'}")
 
-    # [EXPLAIN] These two axioms are sufficient because they cover all possible
-    # cases when reading from a modified array. For any indices i and j, exactly
-    # one of two situations holds: either i = j (read the value just written) or
-    # i ≠ j (read the original value). Since these are mutually exclusive and
-    # exhaustive (law of excluded middle), any Select(Store(a, i, v), j) is fully
-    # determined. By induction, any sequence of nested Store/Select operations
-    # can be reduced to these two base cases.
+    # [EXPLAIN] When you read from a modified array at index j, there are only two
+    # cases: either j is the index you wrote to (axiom 1, you get the new value)
+    # or it's a different index (axiom 2, you get the old value). Since i=j and
+    # i!=j cover every possibility, these two rules fully determine what
+    # Select(Store(a,i,v), j) returns for any i,j.
     print()
 
 

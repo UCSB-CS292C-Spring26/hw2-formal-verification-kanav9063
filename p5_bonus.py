@@ -128,19 +128,12 @@ def verify_buggy_composition():
 # ============================================================================
 # Part (c): Real-world connection — 3 pts
 #
-# [EXPLAIN] How does this kind of composition bug manifest in actual agent
-# workflows? Give a concrete example.
-#
-# This composition bug — where one skill accidentally overwrites a file that
-# another skill depends on — is common in real coding agents. For example,
-# in Claude Code, a "refactor" skill might read a config file to understand
-# project structure, then a "format" skill might overwrite that same config
-# file with reformatted content. If the formatter changes the semantics
-# (e.g., reordering YAML keys that are order-dependent), the refactoring
-# skill's assumptions are invalidated silently. A runtime monitor would need
-# to track which files each skill reads (its "frame") and ensure no subsequent
-# skill writes to those paths — essentially enforcing the frame condition
-# from Hoare logic's sequence rule at the filesystem level.
+# [EXPLAIN] ive seen this happen with claude code — one tool reads a config
+# file to figure out the project layout, then another tool reformats or edits
+# that same file. the first tool's assumptions about the file contents are now
+# wrong but it doesnt know. basically the second tool violated the "frame"
+# (what it promised not to touch). a monitor would need to track which files
+# each skill read and block later skills from writing to those paths.
 # ============================================================================
 
 
