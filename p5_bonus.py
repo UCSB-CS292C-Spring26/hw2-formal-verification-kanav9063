@@ -26,24 +26,6 @@ OUTPUT_FILE = 1
 
 # ============================================================================
 # Part (a): Verify correct composition — 4 pts
-#
-# Skill A: Reads INPUT_FILE, extracts URLs. Does NOT modify any file.
-#   Pre:  true
-#   Post: fs_after_A = fs_before_A  (filesystem unchanged)
-#
-# Skill B: Fetches URLs and writes results to OUTPUT_FILE. Does NOT modify
-#          any file other than OUTPUT_FILE.
-#   Pre:  true
-#   Post: Select(fs_after_B, OUTPUT_FILE) = result_content
-#         ∧ ∀p. p ≠ OUTPUT_FILE → Select(fs_after_B, p) = Select(fs_before_B, p)
-#
-# Composed postcondition:
-#   Select(fs_final, INPUT_FILE) = Select(fs_initial, INPUT_FILE)  [input preserved]
-#   ∧ Select(fs_final, OUTPUT_FILE) = result_content               [output written]
-#   ∧ ∀p. p ≠ OUTPUT_FILE → Select(fs_final, p) = Select(fs_initial, p)
-#                                                                  [nothing else changed]
-#
-# TODO: Encode this as a Z3 validity check and verify it.
 # ============================================================================
 
 def verify_correct_composition():
@@ -76,32 +58,23 @@ def verify_correct_composition():
                             Select(fs_final, p) == Select(fs_initial, p)))
     )
 
-    # TODO: Check that (skill_A_post ∧ skill_B_post) → composed_post is valid.
-    # That is, check that the negation is UNSAT.
+    # Check that (skill_A_post ∧ skill_B_post) → composed_post is valid.
+    # Negate and check UNSAT.
     s = Solver()
-    # s.add(skill_A_post)
-    # s.add(skill_B_post)
-    # s.add(Not(composed_post))
+    s.add(skill_A_post)
+    s.add(skill_B_post)
+    s.add(Not(composed_post))
 
-    # TODO: uncomment and check
-    # result = s.check()
-
-    print("  TODO: Implement verification")
+    result = s.check()
+    if result == unsat:
+        print("  ✓ Composed postcondition VERIFIED (UNSAT — no counterexample)")
+    else:
+        print(f"  ✗ Composition FAILED: {s.model()}")
     print()
 
 
 # ============================================================================
 # Part (b): Buggy composition — 3 pts
-#
-# Bug: Skill B accidentally writes to INPUT_FILE instead of OUTPUT_FILE.
-#
-# Buggy Skill B postcondition:
-#   Select(fs_final, INPUT_FILE) = result_content     ← overwrites input!
-#   ∧ ∀p. p ≠ INPUT_FILE → Select(fs_final, p) = Select(fs_after_A, p)
-#
-# The composed postcondition should FAIL because the input file is modified.
-#
-# TODO: Encode this and show the counterexample.
 # ============================================================================
 
 def verify_buggy_composition():
@@ -130,26 +103,44 @@ def verify_buggy_composition():
                             Select(fs_final, p) == Select(fs_initial, p)))
     )
 
-    # TODO: Check that the composed postcondition FAILS.
-    # Print the counterexample showing how the input file gets corrupted.
+    # Check: the composed postcondition should FAIL.
     s = Solver()
-    # s.add(...)
+    s.add(skill_A_post)
+    s.add(buggy_B_post)
+    s.add(Not(composed_post))
 
-    print("  TODO: Implement buggy verification")
+    result = s.check()
+    if result == sat:
+        m = s.model()
+        print("  ✗ Composed postcondition FAILS (SAT — counterexample found)")
+        print(f"    Model: {m}")
+        print()
+        # Show what went wrong
+        print("  Explanation:")
+        print("    Skill B wrote result_content to INPUT_FILE (path 0) instead of OUTPUT_FILE (path 1).")
+        print("    The composed postcondition requires INPUT_FILE to be unchanged,")
+        print("    but Skill B overwrote it. The input file is now corrupted.")
+    else:
+        print("  ✓ No counterexample found (unexpected!)")
     print()
 
 
 # ============================================================================
 # Part (c): Real-world connection — 3 pts
 #
-# [EXPLAIN] in a comment below (3–4 sentences):
-# How does this kind of composition bug manifest in actual agent workflows?
-# Give a concrete example from your experience with coding agents (Claude Code,
-# Cursor, Copilot, etc.) or from what you learned in class. What would a runtime monitor need to check to
-# prevent this class of bugs?
-
-# TODO: Write your explanation here as a comment.
-# ...
+# [EXPLAIN] How does this kind of composition bug manifest in actual agent
+# workflows? Give a concrete example.
+#
+# This composition bug — where one skill accidentally overwrites a file that
+# another skill depends on — is common in real coding agents. For example,
+# in Claude Code, a "refactor" skill might read a config file to understand
+# project structure, then a "format" skill might overwrite that same config
+# file with reformatted content. If the formatter changes the semantics
+# (e.g., reordering YAML keys that are order-dependent), the refactoring
+# skill's assumptions are invalidated silently. A runtime monitor would need
+# to track which files each skill reads (its "frame") and ensure no subsequent
+# skill writes to those paths — essentially enforcing the frame condition
+# from Hoare logic's sequence rule at the filesystem level.
 # ============================================================================
 
 

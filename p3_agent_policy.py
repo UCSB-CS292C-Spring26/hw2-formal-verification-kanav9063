@@ -43,24 +43,15 @@ allowed = Function('allowed', User, IntSort(), Resource, BoolSort())
 # Part (a): Encode the Policy — 10 pts
 #
 # Encode rules R1–R5 from the README as Z3 constraints.
-#
-# You must design the encoding yourself. Consider:
-# - Use ForAll to make rules apply to all users/resources.
-# - Encode both what IS allowed and what is NOT allowed.
-# - Rule R4 overrides R3 — handle this carefully.
-#
-# Return a list of Z3 constraints.
 # ============================================================================
 
 def make_policy():
     """
     Return a list of Z3 constraints encoding rules R1–R5.
 
-    TODO: Implement this. You need to think about:
-    1. How to express "viewers may ONLY do X" (everything else is denied).
-    2. How R4 overrides R3 for admins.
-    3. Whether you need a closed-world assumption (if not explicitly
-       allowed, it's denied).
+    Strategy: use a default-deny biconditional. allowed(u, t, r) is True iff
+    one of the explicit permit conditions holds AND no deny condition applies.
+    This ensures anything not explicitly allowed is denied (closed-world).
     """
     u = Const('u', User)
     r = Const('r', Resource)
@@ -68,8 +59,45 @@ def make_policy():
 
     constraints = []
 
-    # TODO: Encode R1–R5
-    # Hint: Start with a default-deny rule, then add exceptions.
+    # Permit conditions (when access is granted):
+    # R1: Viewers may only file_read non-sensitive resources
+    # R2: Developers may file_read anything, file_write if owner or in sandbox
+    # R3: Admins may use any tool on any resource
+    permit = Or(
+        # R3: Admin — any tool, any resource
+        role(u) == ADMIN,
+        # R2: Developer — file_read anything, or file_write with ownership/sandbox
+        And(role(u) == DEVELOPER, Or(
+            t == FILE_READ,
+            And(t == FILE_WRITE, Or(owner(r) == u, in_sandbox(r)))
+        )),
+        # R1: Viewer — file_read non-sensitive only
+        And(role(u) == VIEWER, t == FILE_READ, Not(is_sensitive(r)))
+    )
+
+    # Deny conditions (override permits):
+    # R4: Nobody may shell_exec on sensitive resources
+    # R5: network_fetch only on sandbox resources
+    deny = Or(
+        And(t == SHELL_EXEC, is_sensitive(r)),     # R4
+        And(t == NETWORK_FETCH, Not(in_sandbox(r)))  # R5
+    )
+
+    # Biconditional: allowed iff permitted and not denied
+    constraints.append(ForAll([u, t, r],
+        allowed(u, t, r) == And(permit, Not(deny))
+    ))
+
+    # Constrain roles to valid values
+    constraints.append(ForAll([u], Or(
+        role(u) == ADMIN, role(u) == DEVELOPER, role(u) == VIEWER
+    )))
+
+    # Constrain tools to valid values
+    constraints.append(ForAll([u, t, r], Implies(
+        allowed(u, t, r),
+        And(t >= 0, t <= 3)
+    )))
 
     return constraints
 
@@ -96,9 +124,6 @@ def query(description, policy, extra):
 def part_b():
     """
     Answer the four queries from the README.
-    For query 4, also demonstrate what becomes possible without R4.
-
-    TODO: Implement each query.
     """
     policy = make_policy()
     print("=== Part (b): Policy Queries ===\n")
@@ -107,55 +132,173 @@ def part_b():
     r = Const('r', Resource)
 
     # Q1: Can a developer write to a sensitive file they don't own, in the sandbox?
-    # TODO
+    # [EXPLAIN] SAT — R2 allows developers to file_write sandbox resources regardless of
+    # ownership or sensitivity. R4 only blocks shell_exec, not file_write.
+    query("Q1: Developer writes sensitive, non-owned, sandbox file?",
+          policy,
+          [role(u) == DEVELOPER,
+           is_sensitive(r) == True,
+           owner(r) != u,
+           in_sandbox(r) == True,
+           allowed(u, FILE_WRITE, r) == True])
 
-    # Q2: Can an admin network_fetch a resource outside the sandbox?
-    # TODO
+    # Q2: Can an admin network_fetch outside the sandbox?
+    # [EXPLAIN] UNSAT — R5 restricts network_fetch to sandbox resources for everyone,
+    # including admins. The deny rule overrides R3.
+    query("Q2: Admin network_fetch outside sandbox?",
+          policy,
+          [role(u) == ADMIN,
+           in_sandbox(r) == False,
+           allowed(u, NETWORK_FETCH, r) == True])
 
-    # Q3: Is there ANY role that can shell_exec on a sensitive resource?
-    # TODO
+    # Q3: Any role that can shell_exec on a sensitive resource?
+    # [EXPLAIN] UNSAT — R4 explicitly blocks all users from shell_exec on sensitive
+    # resources. This deny rule overrides even R3 (admin permissions).
+    query("Q3: Any role shell_exec on sensitive resource?",
+          policy,
+          [is_sensitive(r) == True,
+           allowed(u, SHELL_EXEC, r) == True])
 
-    # Q4: [EXPLAIN] in a comment Remove R4 — what dangerous action becomes possible?
-    # TODO: Create a modified policy without R4, demonstrate the new capability.
+    # Q4: Remove R4 — what becomes possible?
+    # Build modified policy WITHOUT the shell_exec deny
+    u2 = Const('u2', User)
+    r2 = Const('r2', Resource)
+    t2 = Int('t2')
+
+    permit_no_r4 = Or(
+        role(u2) == ADMIN,
+        And(role(u2) == DEVELOPER, Or(
+            t2 == FILE_READ,
+            And(t2 == FILE_WRITE, Or(owner(r2) == u2, in_sandbox(r2)))
+        )),
+        And(role(u2) == VIEWER, t2 == FILE_READ, Not(is_sensitive(r2)))
+    )
+    # Only R5 in deny now (R4 removed)
+    deny_no_r4 = And(t2 == NETWORK_FETCH, Not(in_sandbox(r2)))
+
+    allowed_no_r4 = Function('allowed_no_r4', User, IntSort(), Resource, BoolSort())
+    policy_no_r4 = [
+        ForAll([u2, t2, r2],
+            allowed_no_r4(u2, t2, r2) == And(permit_no_r4, Not(deny_no_r4))),
+        ForAll([u2], Or(role(u2) == ADMIN, role(u2) == DEVELOPER, role(u2) == VIEWER))
+    ]
+
+    # [EXPLAIN] Without R4, admins can shell_exec on sensitive resources.
+    # This is dangerous because shell_exec can run arbitrary code on
+    # sensitive data (e.g., dumping a database, exfiltrating credentials).
+    query("Q4: Without R4, admin shell_exec on sensitive resource?",
+          policy_no_r4,
+          [role(u2) == ADMIN,
+           is_sensitive(r2) == True,
+           allowed_no_r4(u2, SHELL_EXEC, r2) == True])
 
 
 # ============================================================================
 # Part (c): Privilege Escalation — 7 pts
-#
-# New rule R6: Developers may shell_exec on non-sensitive sandbox resources.
-#
-# Attack scenario: A developer uses shell_exec on a non-sensitive sandbox
-# resource to change ANOTHER resource's sensitivity flag (e.g., modifying
-# a config file that controls access). This makes a previously sensitive
-# resource become non-sensitive, bypassing R4 on the next step.
-#
-# Model this as a 2-step trace where a resource's sensitivity changes
-# between steps.
 # ============================================================================
 
 def part_c():
     """
-    TODO:
-    1. Add rule R6 to the policy.
-    2. Model a 2-step trace:
-       - Step 1: developer calls shell_exec on resource r1
-         (r1 is non-sensitive and in sandbox — allowed by R6)
-         Side-effect: this command changes resource r2 from sensitive to
-         non-sensitive (e.g., modifying an access-control config)
-       - Step 2: developer calls shell_exec on resource r2
-         (r2 is NOW non-sensitive — was it allowed before? is it allowed now?)
-    3. The twist: r2's sensitivity changes BETWEEN steps. Encode this by
-       using two copies of is_sensitive (before and after).
-    4. Check if the developer can effectively access a previously-sensitive resource.
-    5. [EXPLAIN] in a comment: Propose and implement a fix.
+    Model a 2-step privilege escalation attack.
+
+    New rule R6: Developers may shell_exec on non-sensitive sandbox resources.
+
+    Attack: Step 1 — developer shell_exec on r1 (non-sensitive, sandbox) which
+    modifies a config that controls r2's sensitivity. Step 2 — r2 is now
+    non-sensitive, so developer shell_exec on r2 bypasses R4.
     """
     print("=== Part (c): Privilege Escalation ===\n")
 
-    # TODO: Your encoding here.
-    # Hint: Use is_sensitive_before and is_sensitive_after as two separate
-    # functions, or use a time-indexed model.
+    u = Const('u', User)
+    r1 = Const('r1', Resource)
+    r2 = Const('r2', Resource)
 
-    print("  TODO: Implement escalation analysis")
+    # Two time steps: sensitivity can change between them
+    is_sensitive_before = Function('is_sensitive_before', Resource, BoolSort())
+    is_sensitive_after = Function('is_sensitive_after', Resource, BoolSort())
+
+    # R6 for developers: shell_exec on non-sensitive sandbox resources
+    # We check allowed_at for each step using the sensitivity at that time
+
+    s = Solver()
+
+    # The developer
+    s.add(role(u) == DEVELOPER)
+
+    # r1 and r2 are distinct resources
+    s.add(r1 != r2)
+
+    # r2 was originally sensitive
+    s.add(is_sensitive_before(r2) == True)
+
+    # Step 1: developer shell_exec on r1
+    # r1 is non-sensitive and in sandbox — allowed by R6
+    s.add(is_sensitive_before(r1) == False)
+    s.add(in_sandbox(r1) == True)
+
+    # Side effect of step 1: r2 becomes non-sensitive
+    # (e.g., shell_exec modified a config file that controls sensitivity)
+    s.add(is_sensitive_after(r2) == False)
+    # r1's sensitivity doesn't change
+    s.add(is_sensitive_after(r1) == is_sensitive_before(r1))
+
+    # Step 2: developer shell_exec on r2
+    # Using the AFTER sensitivity, r2 is now non-sensitive and in sandbox
+    s.add(in_sandbox(r2) == True)
+
+    # R4 check at step 2 using AFTER sensitivity: shell_exec blocked only if sensitive
+    # Since is_sensitive_after(r2) == False, R4 does NOT block it
+    # R6 allows developer shell_exec on non-sensitive sandbox resources
+    step2_r4_blocks = And(is_sensitive_after(r2))  # R4 would block if sensitive
+    step2_r6_allows = And(
+        role(u) == DEVELOPER,
+        Not(is_sensitive_after(r2)),
+        in_sandbox(r2)
+    )
+
+    # The attack succeeds: step 2 is allowed despite r2 being originally sensitive
+    s.add(step2_r6_allows)
+    s.add(Not(step2_r4_blocks))  # R4 doesn't block (sensitivity was changed)
+
+    result = s.check()
+    print(f"  Escalation possible: {result}")
+    if result == sat:
+        print(f"  Model: {s.model()}")
+        print()
+        print("  Attack trace:")
+        print("    Step 1: developer shell_exec on r1 (non-sensitive, sandbox) → ALLOWED by R6")
+        print("           Side effect: r2's sensitivity changed from True to False")
+        print("    Step 2: developer shell_exec on r2 (now non-sensitive, sandbox) → ALLOWED by R6")
+        print("           R4 bypassed because r2 is no longer marked sensitive!")
+    print()
+
+    # Fix: Add a constraint that sensitivity flags are IMMUTABLE — shell_exec cannot
+    # change them. Alternatively, check against the ORIGINAL sensitivity.
+    print("  Proposed fix: Check shell_exec against ORIGINAL sensitivity, not current.")
+    print("  Implementation: Add constraint that sensitivity is monotonic (once sensitive, always sensitive).")
+
+    s_fix = Solver()
+    s_fix.add(role(u) == DEVELOPER)
+    s_fix.add(r1 != r2)
+    s_fix.add(is_sensitive_before(r2) == True)
+    s_fix.add(is_sensitive_before(r1) == False)
+    s_fix.add(in_sandbox(r1) == True)
+    s_fix.add(in_sandbox(r2) == True)
+
+    # FIX: Sensitivity is monotonic — once sensitive, always sensitive
+    r_any = Const('r_any', Resource)
+    s_fix.add(ForAll([r_any], Implies(
+        is_sensitive_before(r_any),
+        is_sensitive_after(r_any)
+    )))
+
+    # Now check if step 2 can still bypass R4
+    s_fix.add(is_sensitive_after(r2) == False)  # attacker tries to make r2 non-sensitive
+
+    fix_result = s_fix.check()
+    print(f"\n  After fix — escalation possible: {fix_result}")
+    if fix_result == unsat:
+        print("  ESCALATION BLOCKED")
     print()
 
 
